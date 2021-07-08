@@ -51,6 +51,7 @@ module ActiveMerchant
 
       def purchase(options)
         return failed_order_response(options) if options[:order_failure_message].present?
+        return pending_order_with_success_response(options) if options[:success_pending_order].present?
 
         MultiResponse.new.tap do |r|
           order_exists = nil
@@ -108,20 +109,6 @@ module ActiveMerchant
         )
       end
 
-      private
-
-      def create_fulfillment(order_id, items)
-        fulfillment_params = { order_id: order_id, items: items }
-        result = @digital_river_gateway.fulfillment.create(fulfillment_params)
-        ActiveMerchant::Billing::Response.new(
-          result.success?,
-          message_from_result(result),
-          {
-            fulfillment_id: (result.value!.id if result.success?)
-          }
-        )
-      end
-
       def get_charge_capture_id(order_id)
         charges = nil
         retry_until(2, "charge not found", 0.5) do
@@ -145,6 +132,20 @@ module ActiveMerchant
             source_id: charges.first.source_id
           },
           authorization: captures.first.id
+        )
+      end
+
+      private
+
+      def create_fulfillment(order_id, items)
+        fulfillment_params = { order_id: order_id, items: items }
+        result = @digital_river_gateway.fulfillment.create(fulfillment_params)
+        ActiveMerchant::Billing::Response.new(
+          result.success?,
+          message_from_result(result),
+          {
+            fulfillment_id: (result.value!.id if result.success?)
+          }
         )
       end
 
@@ -207,6 +208,17 @@ module ActiveMerchant
         ActiveMerchant::Billing::Response.new(
           false,
           options[:order_failure_message]
+        )
+      end
+
+      def pending_order_with_success_response(options)
+        ActiveMerchant::Billing::Response.new(
+          true,
+          "Order not in 'accepted' state",
+          {
+            order_id: options[:order_id],
+          },
+          authorization: options[:order_id]
         )
       end
 
